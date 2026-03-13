@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { RotateCw01Icon, Cancel01Icon, Add01Icon } from "hugeicons-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { RotateClockwiseIcon, Cancel01Icon, Add01Icon } from "@hugeicons/core-free-icons";
 
 interface Topic {
   id: number;
@@ -111,7 +112,7 @@ export default function App() {
           onClick={resetAll}
           title="Reiniciar"
         >
-          <RotateCw01Icon size={13} color="currentColor" />
+          <HugeiconsIcon icon={RotateClockwiseIcon} size={13} />
         </Button>
       </div>
 
@@ -168,7 +169,7 @@ export default function App() {
                   removeTopic(topic.id);
                 }}
               >
-                <Cancel01Icon size={13} color="currentColor" />
+                <HugeiconsIcon icon={Cancel01Icon} size={13} />
               </button>
             </div>
           ))
@@ -194,7 +195,7 @@ export default function App() {
           className="bg-[rgba(126,232,162,0.15)] border border-[rgba(126,232,162,0.25)] rounded-lg text-[#7ee8a2] text-lg w-8 h-8 flex-shrink-0 p-0 hover:bg-[rgba(126,232,162,0.25)] cursor-pointer"
           onClick={addTopic}
         >
-          <Add01Icon size={16} color="currentColor" />
+          <HugeiconsIcon icon={Add01Icon} size={16} />
         </Button>
       </div>
     </div>
