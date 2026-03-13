@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,20 @@ export default function App() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Ctrl+Arrow: snap window to screen position
+      if (e.ctrlKey && e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        const positions: Record<string, string> = {
+          ArrowRight: "right",
+          ArrowLeft: "left",
+          ArrowUp: "top-right",
+          ArrowDown: "bottom-right",
+        };
+        const pos = positions[e.key];
+        if (pos) invoke("snap_window", { position: pos });
+        return;
+      }
+
       if (document.activeElement === inputRef.current) return;
       if (e.key === "ArrowDown" || e.key === "ArrowRight") {
         e.preventDefault();
@@ -162,7 +177,7 @@ export default function App() {
 
       {/* Keyboard hint */}
       <div className="text-center font-['IBM_Plex_Mono'] text-[9px] text-white/30 py-1 tracking-[0.05em]">
-        ↑↓ navegar · space marcar · duplo clique marcar
+        ↑↓ navegar · space marcar · ctrl+↑↓←→ mover
       </div>
 
       {/* Add area */}
