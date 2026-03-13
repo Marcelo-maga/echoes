@@ -2,7 +2,7 @@
 name = "echoes"
 version = "0.1.0"
 description = "A Tauri App"
-authors = ["you"]
+authors = ["Marcelo-maga"]
 edition = "2021"
 
 [lib]

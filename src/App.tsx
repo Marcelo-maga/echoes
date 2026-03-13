@@ -1,39 +1,88 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { RotateClockwiseIcon, Cancel01Icon, Add01Icon } from "@hugeicons/core-free-icons";
+import {
+  Edit01Icon,
+  PlayIcon,
+  RotateClockwiseIcon,
+  ArrowDown01Icon,
+  TextFontIcon,
+  LayoutLeftIcon,
+} from "@hugeicons/core-free-icons";
+import "./App.css";
 
-interface Topic {
-  id: number;
-  text: string;
-  done: boolean;
-}
+// ─── Types ──────────────────────────────────────────────────────────────────
 
-const INITIAL_TOPICS: Topic[] = [
-  { id: 1, text: "Introdução e contexto", done: false },
-  { id: 2, text: "Problema que será resolvido", done: false },
-  { id: 3, text: "Metodologia utilizada", done: false },
-  { id: 4, text: "Resultados obtidos", done: false },
-  { id: 5, text: "Conclusão e próximos passos", done: false },
-];
+type Mode = "edit" | "present";
+
+const PLACEHOLDER = `Escreva seu roteiro aqui...
+
+Pode ser anotações soltas, tópicos, parágrafos completos — qualquer coisa que você queira ter como guia durante a gravação.
+
+Pressione o botão ▶ para entrar no modo leitura.`;
+
+// ─── Componente principal ────────────────────────────────────────────────────
 
 export default function App() {
-  const [topics, setTopics] = useState<Topic[]>(INITIAL_TOPICS);
-  const [current, setCurrent] = useState(0);
-  const [newText, setNewText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const activeRef = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<Mode>("edit");
+  const [text, setText] = useState("");
+  const [fontSize, setFontSize] = useState(15);
+  const [autoScroll, setAutoScroll] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(30); // px/s
+  const [showControls, setShowControls] = useState(false);
 
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Auto-scroll em Present mode ────────────────────────────────────────
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [current]);
+    if (mode !== "present" || !autoScroll) {
+      if (scrollTimerRef.current) clearInterval(scrollTimerRef.current);
+      return;
+    }
 
+    // Base UI uses data-slot="scroll-area-viewport" instead of Radix's data attribute
+    const viewport = scrollAreaRef.current?.querySelector(
+      '[data-slot="scroll-area-viewport"]'
+    ) as HTMLElement | null;
+
+    if (!viewport) return;
+
+    const pxPerTick = scrollSpeed / 60;
+
+    scrollTimerRef.current = setInterval(() => {
+      viewport.scrollTop += pxPerTick;
+    }, 1000 / 60);
+
+    return () => {
+      if (scrollTimerRef.current) clearInterval(scrollTimerRef.current);
+    };
+  }, [mode, autoScroll, scrollSpeed]);
+
+  // ── Parar auto-scroll ao trocar de modo ───────────────────────────────
+  useEffect(() => {
+    if (mode === "edit") {
+      setAutoScroll(false);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    }
+  }, [mode]);
+
+  // ── Snap de janela via Ctrl+Arrow ─────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Ctrl+Arrow: snap window to screen position
       if (e.ctrlKey && e.key.startsWith("Arrow")) {
         e.preventDefault();
         const positions: Record<string, string> = {
@@ -44,160 +93,303 @@ export default function App() {
         };
         const pos = positions[e.key];
         if (pos) invoke("snap_window", { position: pos });
-        return;
       }
-
-      if (document.activeElement === inputRef.current) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowRight") {
-        e.preventDefault();
-        setCurrent((c) => Math.min(c + 1, topics.length - 1));
-      } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
-        e.preventDefault();
-        setCurrent((c) => Math.max(c - 1, 0));
-      } else if (e.key === " " || e.key === "Enter") {
-        e.preventDefault();
-        markDone(current);
+      if (e.key === "Escape" && mode === "present") {
+        setMode("edit");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [topics, current]);
+  }, [mode]);
 
-  function markDone(index: number) {
-    setTopics((prev) =>
-      prev.map((t, i) => (i === index ? { ...t, done: !t.done } : t))
-    );
-    const next = topics.findIndex((t, i) => i > index && !t.done);
-    if (next !== -1) setCurrent(next);
-  }
+  const wordCount =
+    text.trim() === "" ? 0 : text.trim().split(/\s+/).length;
 
-  function addTopic() {
-    const text = newText.trim();
-    if (!text) return;
-    setTopics((prev) => [...prev, { id: Date.now(), text, done: false }]);
-    setNewText("");
-    inputRef.current?.focus();
-  }
+  const handleReset = useCallback(() => {
+    if (mode === "present") {
+      const viewport = scrollAreaRef.current?.querySelector(
+        '[data-slot="scroll-area-viewport"]'
+      ) as HTMLElement | null;
+      if (viewport) viewport.scrollTop = 0;
+    } else {
+      setText("");
+    }
+  }, [mode]);
 
-  function removeTopic(id: number) {
-    setTopics((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      if (current >= next.length) setCurrent(Math.max(0, next.length - 1));
-      return next;
-    });
-  }
-
-  function resetAll() {
-    setTopics((prev) => prev.map((t) => ({ ...t, done: false })));
-    setCurrent(0);
-  }
-
-  const doneCount = topics.filter((t) => t.done).length;
-  const progress = topics.length > 0 ? (doneCount / topics.length) * 100 : 0;
+  // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen flex flex-col bg-[rgba(10,10,14,0.82)] backdrop-blur-xl border border-white/[0.08] rounded-xl text-[#e8e8e8] overflow-hidden select-none">
-      {/* Header */}
+    <TooltipProvider delay={400}>
       <div
-        className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.08] cursor-grab active:cursor-grabbing"
-        data-tauri-drag-region
+        className="h-screen flex flex-col rounded-[14px] border overflow-hidden select-none"
+        style={{
+          background: "rgba(9, 8, 6, 0.88)",
+          borderColor: "rgba(255,255,255,0.07)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          color: "#ede8df",
+        }}
       >
-        <span className="font-['IBM_Plex_Mono'] text-[11px] tracking-[0.12em] uppercase text-[#7ee8a2] opacity-80">
-          ◉ echoes
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-[26px] w-[26px] text-white/30 border border-white/[0.08] rounded-md hover:text-[#e8e8e8] hover:border-white/20 hover:bg-white/[0.04] text-[13px] cursor-pointer"
-          onClick={resetAll}
-          title="Reiniciar"
-        >
-          <HugeiconsIcon icon={RotateClockwiseIcon} size={13} />
-        </Button>
-      </div>
-
-      {/* Progress bar */}
-      <div className="h-0.5 bg-white/[0.08] mx-3.5">
+        {/* ── Header ──────────────────────────────────────────────────── */}
         <div
-          className="h-full bg-[#7ee8a2] transition-[width] duration-300 rounded-sm"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-
-      {/* Topics list */}
-      <div className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {topics.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center flex-col gap-2 text-white/30 text-xs text-center p-5">
-            <div className="text-3xl opacity-40">📋</div>
-            <span>Adicione seus tópicos abaixo</span>
-          </div>
-        ) : (
-          topics.map((topic, index) => (
-            <div
-              key={topic.id}
-              ref={index === current ? activeRef : null}
-              className={cn(
-                "group flex items-start gap-2 px-2.5 py-2 rounded-lg border border-transparent cursor-pointer transition-all duration-150",
-                index === current
-                  ? "bg-[rgba(126,232,162,0.15)] border-[rgba(126,232,162,0.25)]"
-                  : "hover:bg-white/[0.04] hover:border-white/[0.08]",
-                topic.done && "opacity-35"
-              )}
-              onClick={() => setCurrent(index)}
-              onDoubleClick={() => markDone(index)}
+          className="flex items-center justify-between px-3 py-2 border-b"
+          style={{ borderColor: "rgba(255,255,255,0.07)" }}
+          data-tauri-drag-region
+        >
+          {/* Logo + badge */}
+          <div className="flex items-center gap-2" data-tauri-drag-region>
+            <span
+              className="text-[11px] tracking-[0.14em] uppercase"
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                color: "#e8b96a",
+                opacity: 0.75,
+              }}
             >
-              <span
-                className={cn(
-                  "font-['IBM_Plex_Mono'] text-[10px] text-white/30 min-w-[16px] pt-0.5",
-                  index === current && "text-[#7ee8a2]"
-                )}
+              echoes
+            </span>
+            <Badge
+              variant="outline"
+              className="h-4 px-1.5 text-[9px] tracking-widest uppercase border-0"
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                background:
+                  mode === "present"
+                    ? "rgba(232,185,106,0.15)"
+                    : "rgba(255,255,255,0.05)",
+                color:
+                  mode === "present"
+                    ? "#e8b96a"
+                    : "rgba(237,232,223,0.35)",
+              }}
+            >
+              {mode === "edit" ? "edit" : "live"}
+            </Badge>
+          </div>
+
+          {/* Ações */}
+          <div className="flex items-center gap-1">
+            {/* Controles (font size + auto-scroll) */}
+            <Tooltip>
+              <TooltipTrigger
+                className="inline-flex items-center justify-center h-6 w-6 rounded-md transition-colors cursor-pointer"
+                style={{
+                  color: showControls
+                    ? "#e8b96a"
+                    : "rgba(237,232,223,0.3)",
+                  background: showControls
+                    ? "rgba(232,185,106,0.1)"
+                    : "transparent",
+                }}
+                onClick={() => setShowControls((v) => !v)}
               >
-                {index + 1}
-              </span>
-              <span
-                className={cn(
-                  "text-[13px] leading-relaxed flex-1 break-words",
-                  index === current && "text-white font-semibold"
-                )}
+                <HugeiconsIcon icon={LayoutLeftIcon} size={12} />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-[10px]">
+                Controles
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Reset */}
+            <Tooltip>
+              <TooltipTrigger
+                className="inline-flex items-center justify-center h-6 w-6 rounded-md transition-colors cursor-pointer"
+                style={{ color: "rgba(237,232,223,0.3)" }}
+                onClick={handleReset}
               >
-                {topic.text}
-              </span>
-              <button
-                className="opacity-0 group-hover:opacity-100 bg-transparent border-none text-[rgba(255,100,100,0.7)] cursor-pointer text-sm px-0.5 transition-opacity duration-150"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeTopic(topic.id);
+                <HugeiconsIcon icon={RotateClockwiseIcon} size={12} />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-[10px]">
+                {mode === "edit" ? "Limpar texto" : "Voltar ao topo"}
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Mode toggle */}
+            <Tooltip>
+              <TooltipTrigger
+                className="inline-flex items-center justify-center h-6 w-6 rounded-md transition-all duration-150 cursor-pointer"
+                style={{
+                  background:
+                    mode === "present"
+                      ? "rgba(232,185,106,0.2)"
+                      : "rgba(232,185,106,0.12)",
+                  border: "1px solid rgba(232,185,106,0.2)",
+                  color: "#e8b96a",
+                }}
+                onClick={() =>
+                  setMode((m) => (m === "edit" ? "present" : "edit"))
+                }
+              >
+                <HugeiconsIcon
+                  icon={mode === "edit" ? PlayIcon : Edit01Icon}
+                  size={11}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-[10px]">
+                {mode === "edit"
+                  ? "Modo leitura (▶)"
+                  : "Modo edição (Esc)"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+
+        {/* ── Painel de controles (colapsável) ───────────────────────── */}
+        {showControls && (
+          <div
+            className="px-3 py-2.5 border-b flex flex-col gap-3 mode-enter"
+            style={{
+              borderColor: "rgba(255,255,255,0.07)",
+              background: "rgba(255,255,255,0.015)",
+            }}
+          >
+            {/* Tamanho da fonte */}
+            <div className="flex items-center gap-2">
+              <HugeiconsIcon
+                icon={TextFontIcon}
+                size={11}
+                color="rgba(237,232,223,0.3)"
+              />
+              <span
+                className="text-[10px] w-14 shrink-0"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "rgba(237,232,223,0.3)",
                 }}
               >
-                <HugeiconsIcon icon={Cancel01Icon} size={13} />
-              </button>
+                Fonte {fontSize}px
+              </span>
+              <Slider
+                min={11}
+                max={26}
+                step={1}
+                value={[fontSize]}
+                onValueChange={(v) => setFontSize(Array.isArray(v) ? v[0] : v)}
+                className="flex-1"
+              />
             </div>
-          ))
+
+            <Separator style={{ background: "rgba(255,255,255,0.06)" }} />
+
+            {/* Auto-scroll */}
+            <div className="flex items-center gap-2">
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                size={11}
+                color="rgba(237,232,223,0.3)"
+              />
+              <span
+                className="text-[10px] w-14 shrink-0"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "rgba(237,232,223,0.3)",
+                }}
+              >
+                Auto-scroll
+              </span>
+              <Switch
+                checked={autoScroll}
+                onCheckedChange={setAutoScroll}
+                disabled={mode !== "present"}
+                className="scale-75 origin-left"
+              />
+              {autoScroll && (
+                <Slider
+                  min={5}
+                  max={80}
+                  step={5}
+                  value={[scrollSpeed]}
+                  onValueChange={(v) => setScrollSpeed(Array.isArray(v) ? v[0] : v)}
+                  className="flex-1"
+                />
+              )}
+            </div>
+          </div>
         )}
-      </div>
 
-      {/* Keyboard hint */}
-      <div className="text-center font-['IBM_Plex_Mono'] text-[9px] text-white/30 py-1 tracking-[0.05em]">
-        ↑↓ navegar · space marcar · ctrl+↑↓←→ mover
-      </div>
+        {/* ── Área principal ─────────────────────────────────────────── */}
+        <div className="flex-1 overflow-hidden relative">
+          {/* EDIT MODE */}
+          {mode === "edit" && (
+            <div className="h-full p-3 mode-enter">
+              <Textarea
+                ref={textareaRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={PLACEHOLDER}
+                className="echoes-editor border-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 h-full"
+                style={{ fontSize: `${Math.min(fontSize, 14)}px` }}
+              />
+            </div>
+          )}
 
-      {/* Add area */}
-      <div className="px-2.5 pt-2.5 pb-3 border-t border-white/[0.08] flex gap-1.5">
-        <Input
-          ref={inputRef}
-          className="flex-1 bg-white/[0.04] border-white/[0.08] rounded-lg text-[#e8e8e8] text-xs placeholder:text-white/30 focus-visible:border-[rgba(126,232,162,0.4)] focus-visible:ring-0 h-8 px-2.5"
-          placeholder="Novo tópico..."
-          value={newText}
-          onChange={(e) => setNewText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && addTopic()}
-        />
-        <Button
-          className="bg-[rgba(126,232,162,0.15)] border border-[rgba(126,232,162,0.25)] rounded-lg text-[#7ee8a2] text-lg w-8 h-8 flex-shrink-0 p-0 hover:bg-[rgba(126,232,162,0.25)] cursor-pointer"
-          onClick={addTopic}
+          {/* PRESENT MODE */}
+          {mode === "present" && (
+            <ScrollArea ref={scrollAreaRef} className="h-full mode-enter">
+              <div className="p-4 pb-16">
+                {text.trim() === "" ? (
+                  <p
+                    className="text-center italic"
+                    style={{
+                      color: "rgba(237,232,223,0.2)",
+                      fontFamily: "'DM Serif Display', serif",
+                      fontSize: `${fontSize}px`,
+                      marginTop: "30%",
+                    }}
+                  >
+                    Nenhum texto ainda.
+                    <br />
+                    <span
+                      className="text-[11px] not-italic"
+                      style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >
+                      Pressione Esc para editar.
+                    </span>
+                  </p>
+                ) : (
+                  <p
+                    className="present-text"
+                    style={{ fontSize: `${fontSize}px` }}
+                  >
+                    {text}
+                  </p>
+                )}
+              </div>
+            </ScrollArea>
+          )}
+        </div>
+
+        {/* ── Footer ─────────────────────────────────────────────────── */}
+        <div
+          className="flex items-center justify-between px-3 py-1.5 border-t"
+          style={{ borderColor: "rgba(255,255,255,0.05)" }}
         >
-          <HugeiconsIcon icon={Add01Icon} size={16} />
-        </Button>
+          <span
+            className="text-[9px]"
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              color: "rgba(237,232,223,0.2)",
+            }}
+          >
+            {mode === "edit"
+              ? `${wordCount} palavra${wordCount !== 1 ? "s" : ""}`
+              : "esc \u2192 editar \u00b7 ctrl+\u2191\u2193\u2190\u2192 mover"}
+          </span>
+          {autoScroll && mode === "present" && (
+            <span
+              className="text-[9px]"
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                color: "rgba(232,185,106,0.5)",
+              }}
+            >
+              ● scroll {scrollSpeed}px/s
+            </span>
+          )}
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
