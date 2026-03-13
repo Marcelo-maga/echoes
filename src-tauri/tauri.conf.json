@@ -13,8 +13,14 @@
     "windows": [
       {
         "title": "echoes",
-        "width": 800,
-        "height": 600
+        "width": 280,
+        "height": 600,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "resizable": true,
+        "shadow": false,
+        "skipTaskbar": true
       }
     ],
     "security": {
